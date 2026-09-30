@@ -372,3 +372,8 @@ simulator_err.txt
 simulator_out.txt
 *.log
 *.err
+
+build*/*
+*
+!CUTE_OMEGA_NETWORK_BLOCKING.md
+specs/*

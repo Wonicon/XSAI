@@ -26,7 +26,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.interrupts._
 import freechips.rocketchip.tile.{BusErrorUnit, BusErrorUnitParams, BusErrors, MaxHartIdBits}
 import freechips.rocketchip.tilelink._
-import xscache.coupledL2.{CoupledL2, EnableL2ClockGate, EnableL2DecoupledDownstreamCHI, EnableMatrix, L2ParamKey, PrefetchCtrlFromCore}
+import xscache.coupledL2.{CoupledL2, EnableCacheMatrixTrace, EnableL2ClockGate, EnableL2DecoupledDownstreamCHI, EnableMatrix, L2ParamKey, PrefetchCtrlFromCore}
 import xscache.chi.{CHIDataCheckKey, CHIIssue, CHIAddrWidthKey, CHIPoisonKey, DecoupledPortIO, NonSecureKey, PortIO}
 import xscache.common.BankBitsKey
 import system.HasSoCParameter
@@ -117,6 +117,7 @@ class L2TopInlined()(implicit p: Parameters) extends LazyModule
       )
       case EnableL2ClockGate => EnableClockGate
       case EnableMatrix => HasMatrixExtension
+      case EnableCacheMatrixTrace => HasMatrixExtension && !debugOpts.FPGAPlatform
       case CHIIssue => p(CHIIssue)
       case CHIAddrWidthKey => p(CHIAddrWidthKey)
       case NonSecureKey => p(NonSecureKey)
@@ -233,6 +234,10 @@ class L2TopInlined()(implicit p: Parameters) extends LazyModule
       )
       val nodeID = Some(Input(UInt(NodeIDWidth.W)))
       val pfCtrlFromCore = Input(new PrefetchCtrlFromCore)
+      val cacheMatrixTrace = Input(new Bundle {
+        val active = Bool()
+        val window = UInt(32.W)
+      })
       val l2_tlb_req = new TlbRequestIO(nRespDups = 2)
       val l2_pmp_resp = Flipped(new PMPRespBundle)
       val l2_hint = ValidIO(new L2ToL1Hint())
@@ -321,6 +326,7 @@ class L2TopInlined()(implicit p: Parameters) extends LazyModule
       val l2 = l2cache.get.module
 
       l2.io.pfCtrlFromCore := io.pfCtrlFromCore
+      l2.io.cacheMatrixTrace := io.cacheMatrixTrace
       l2.io.dft.zip(io.dft).foreach({ case(a, b) => a := b })
       l2.io.dft_reset.zip(io.dft_reset).foreach({ case(a, b) => a := b })
       io.l2_hint := l2.io.l2_hint

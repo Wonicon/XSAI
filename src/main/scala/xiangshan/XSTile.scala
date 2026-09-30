@@ -41,6 +41,27 @@ object MatAcc extends Enumeration {
 
 case object MatAccKey extends Field[MatAcc.Value](MatAcc.AME)
 
+class CacheMatrixTraceWindow extends Module {
+  val io = IO(new Bundle {
+    val controlFire = Input(Bool())
+    val releaseFire = Input(Bool())
+    val active = Output(Bool())
+    val window = Output(UInt(32.W))
+  })
+
+  val active = RegInit(false.B)
+  val window = RegInit(0.U(32.W))
+  when(io.controlFire && !active) {
+    active := true.B
+    window := window + 1.U
+  }
+  when(io.releaseFire && active) {
+    active := false.B
+  }
+  io.active := active
+  io.window := window
+}
+
 class XSTile()(implicit p: Parameters) extends LazyModule
   with HasXSParameter
   with HasSoCParameter
@@ -148,6 +169,12 @@ class XSTile()(implicit p: Parameters) extends LazyModule
       val l2_flush_en = Option.when(EnablePowerDown) (Output(Bool()))
       val l2_flush_done = Option.when(EnablePowerDown) (Output(Bool()))
     })
+
+    val cacheMatrixTraceWindow = Module(new CacheMatrixTraceWindow)
+    cacheMatrixTraceWindow.io.controlFire := false.B
+    cacheMatrixTraceWindow.io.releaseFire := false.B
+    l2top.module.io.cacheMatrixTrace.active := cacheMatrixTraceWindow.io.active
+    l2top.module.io.cacheMatrixTrace.window := cacheMatrixTraceWindow.io.window
 
     dontTouch(io.hartId)
     dontTouch(io.msiInfo)
@@ -258,10 +285,12 @@ class XSTile()(implicit p: Parameters) extends LazyModule
       cute.module.io := DontCare
       core.module.io.amuCtrl.foreach { amuCtrl =>
         cute.module.io.cute.ctrl2top.amuCtrl <> amuCtrl
+        cacheMatrixTraceWindow.io.controlFire := amuCtrl.fire
       }
       core.module.io.amuRelease.foreach { amuRelease =>
         amuRelease.bits := cute.module.io.cute.ctrl2top.mrelease.bits
         amuRelease.valid := cute.module.io.cute.ctrl2top.mrelease.valid
+        cacheMatrixTraceWindow.io.releaseFire := amuRelease.fire
       }
 
       val matrix_data_out = l2top.module.io.matrixDataOut512L2

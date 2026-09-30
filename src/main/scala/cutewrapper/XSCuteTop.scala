@@ -200,9 +200,9 @@ class XSCuteImp(wrapper: XSCute)(implicit p: Parameters) extends LazyModuleImp(w
 
     // Match LocalMMU's RequestSourceID encoding:
     // encodedId = (reqLlcOrigId << SourceTagWidth) | sourceTag
-    val sourceTagWidth = 3
-    val cWriteTag = 3.U(sourceTagWidth.W)
-    val allocatedOrigIdFlagBit = 60
+    val sourceTagWidth = MemTraceId.SourceTagWidth
+    val cWriteTag = MemTraceId.cWriteTag
+    val allocatedOrigIdFlagBit = MemTraceId.AllocatedOrigIdFlagBit
 
     def isAllocatedOrigId(id: UInt): Bool = id.pad(64)(allocatedOrigIdFlagBit)
     def restoreLoaderSourceId(id: UInt): UInt = {
@@ -234,34 +234,42 @@ class XSCuteImp(wrapper: XSCute)(implicit p: Parameters) extends LazyModuleImp(w
 
     val writeReq = mmu.Request(0)
     val reqEncodedSourceId = writeReq.bits.RequestSourceID
-    val (reqSourceTag, _, reqLoaderSourceIdx, reqLoaderSourceIdInRange) = decodeEncodedSourceId(reqEncodedSourceId)
+    val (reqSourceTag, reqLlcOrigId, reqLoaderSourceIdx, reqLoaderSourceIdInRange) =
+      decodeEncodedSourceId(reqEncodedSourceId)
+    val reqUsesAllocatedSourceId = isAllocatedOrigId(reqLlcOrigId)
     val reqWriteReqEntry = writeReqTable(reqLoaderSourceIdx)
 
     // Record write request when it fires
     when(writeReq.fire && writeReq.bits.RequestType_isWrite) {
       assert(reqSourceTag === cWriteTag, cf"CUTE store request has unexpected source tag ${reqSourceTag}")
-      assert(reqLoaderSourceIdInRange, cf"CUTE store request source id out of range: encoded=${reqEncodedSourceId}")
-      reqWriteReqEntry.addr := writeReq.bits.RequestAddr
-      reqWriteReqEntry.data := writeReq.bits.RequestData.asTypeOf(Vec(64, UInt(8.W)))
-      reqWriteReqEntry.mask := writeReq.bits.RequestMask
-      reqWriteReqEntry.valid := true.B
+      when(reqUsesAllocatedSourceId) {
+        assert(reqLoaderSourceIdInRange, cf"CUTE store request source id out of range: encoded=${reqEncodedSourceId}")
+        reqWriteReqEntry.addr := writeReq.bits.RequestAddr
+        reqWriteReqEntry.data := writeReq.bits.RequestData.asTypeOf(Vec(64, UInt(8.W)))
+        reqWriteReqEntry.mask := writeReq.bits.RequestMask
+        reqWriteReqEntry.valid := true.B
+      }
     }
 
 
     val respEncodedSourceId = tl_in.d.bits.user.lift(AmeIndexKey).get  // Force to contain AmeIndexKey in the path.
-    val (respSourceTag, _, respLoaderSourceIdx, respLoaderSourceIdInRange) = decodeEncodedSourceId(respEncodedSourceId)
+    val (respSourceTag, respLlcOrigId, respLoaderSourceIdx, respLoaderSourceIdInRange) =
+      decodeEncodedSourceId(respEncodedSourceId)
+    val respUsesAllocatedSourceId = isAllocatedOrigId(respLlcOrigId)
     val respWriteReqEntry = writeReqTable(respLoaderSourceIdx)
 
     val ackFire = tl_in.d.fire
     val isStoreAck = tl_in.d.bits.opcode === TLMessages.AccessAck || tl_in.d.bits.opcode === TLMessages.ReleaseAck
     val hasStoreTag = respSourceTag === cWriteTag
-    val hasValidWriteReq = respLoaderSourceIdInRange && respWriteReqEntry.valid
+    val hasValidWriteReq = respUsesAllocatedSourceId && respLoaderSourceIdInRange && respWriteReqEntry.valid
     
     // Clear valid when response comes back
     when(ackFire && isStoreAck) {
       assert(respSourceTag === cWriteTag, cf"CUTE store response has unexpected source tag ${respSourceTag}")
-      assert(respLoaderSourceIdInRange, cf"CUTE store response source id out of range: encoded=${respEncodedSourceId}")
-      respWriteReqEntry.valid := false.B
+      when(respUsesAllocatedSourceId) {
+        assert(respLoaderSourceIdInRange, cf"CUTE store response source id out of range: encoded=${respEncodedSourceId}")
+        respWriteReqEntry.valid := false.B
+      }
     }
     
     // Trigger DiffTest event when write response comes back

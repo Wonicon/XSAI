@@ -559,7 +559,7 @@ class DefaultMatrixConfig(n: Int = 1) extends Config(
         MsyncRegs = xp.MsyncRegs,
         Tensor_MN = tensorMn,
         Tensor_K = tensorK,
-        Debug = CuteDebugParams.NoDebug,
+        Debug = CuteDebugParams.AllDebugOn,
         EnableDifftest = site(DebugOptionsKey).EnableDifftest,
         v3config = Cutev3extParams(
           TaskCtrl_AutoClear = true,
@@ -567,6 +567,12 @@ class DefaultMatrixConfig(n: Int = 1) extends Config(
         MatrixExtension = xp.MatrixExtension,
         L2NBanks = xp.L2NBanks,
       )
+  })
+)
+
+class OmegaInputQueueDisabledMatrixConfig(n: Int = 1) extends Config(
+  new DefaultMatrixConfig(n).alter((site, here, up) => {
+    case CuteParamsKey => up(CuteParamsKey).copy(EnableOmegaInputQueue = false)
   })
 )
 
